@@ -573,12 +573,15 @@ function sweep(){
   });
 }
 var sweeping=false;
+// rAF is only a throttle for scroll. It is paused in background tabs, so the paths that
+// exist to guarantee visibility call sweep() directly instead of going through it.
 function queueSweep(){if(sweeping)return;sweeping=true;requestAnimationFrame(function(){sweeping=false;sweep()})}
 addEventListener('scroll',queueSweep,{passive:true});
-addEventListener('resize',queueSweep);
-addEventListener('load',queueSweep);
-document.addEventListener('visibilitychange',function(){if(!document.hidden)queueSweep()});
-queueSweep();
+addEventListener('resize',sweep);
+addEventListener('load',sweep);
+document.addEventListener('visibilitychange',function(){if(!document.hidden)sweep()});
+sweep();
+setTimeout(sweep,1200);
 </script>
 <a class="demo-tag" href="#work">Concept demo · sample content &amp; placeholder photos</a>
 </body>

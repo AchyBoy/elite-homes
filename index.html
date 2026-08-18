@@ -705,7 +705,8 @@ window.EHLOG=function(){};
      play, and an attempt that gets refused costs nothing. */
   var WAKE=['click','touchend','pointerup','touchstart','keydown','wheel','scroll'];
 
-  var wanted=true, playing=false;
+  var wanted=true, playing=false, confirmTimer=null;
+  var mutedFallback=false;   /* running silently, waiting for a real activation */
   try{ wanted = localStorage.getItem('eh-music')!=='off' }catch(e){}
 
   function setVol(v){ try{ el.volume=Math.max(0,Math.min(1,v)) }catch(e){} }
@@ -736,11 +737,69 @@ window.EHLOG=function(){};
     var pr=el.play();                       /* bare, first, nothing before it */
     (pr&&pr.then?pr:Promise.resolve()).then(function(){
       if(!wanted){ el.pause(); return; }    /* muted while play() was in flight */
-      playing=true; detach(); paint(); fadeTo(VOL);
-      EHLOG('play() RESOLVED, sound is out','good');
+      EHLOG('play() resolved, now verifying it actually runs');
+      confirm();
     }).catch(function(err){
       EHLOG('play() refused: '+(err&&err.name),'bad');   /* keep listening */
     });
+  }
+
+  /* play() resolving is NOT proof of sound. Safari on macOS resolves the promise
+     and then quietly declines, so the only trustworthy signal is currentTime
+     actually moving. Detaching the wake listeners on the promise alone threw away
+     every later chance to start. */
+  function confirm(){
+    clearInterval(confirmTimer);
+    var t0=el.currentTime, n=0;
+    confirmTimer=setInterval(function(){
+      n++;
+      if(!wanted){ clearInterval(confirmTimer); return; }
+      if(el.paused){
+        EHLOG('declined: element paused itself after play()','bad');
+        clearInterval(confirmTimer); lost(); return;
+      }
+      if(el.currentTime > t0 + 0.05){
+        clearInterval(confirmTimer);
+        playing=true; detach(); paint(); fadeTo(VOL);
+        EHLOG('CONFIRMED playing, t='+el.currentTime.toFixed(2)+' vol='+el.volume.toFixed(2),'good');
+        return;
+      }
+      if(n>16){
+        EHLOG('declined: resolved but currentTime never moved (t='+el.currentTime.toFixed(2)+')','bad');
+        clearInterval(confirmTimer); lost();
+      }
+    },250);
+  }
+
+  /* Refused sound. Safari will still allow MUTED playback, so run it silently and
+     un-mute the moment a real activation arrives. That way the track is already
+     rolling and buffered, and the first click brings sound instantly rather than
+     starting a fresh load. */
+  function lost(){
+    playing=false; paint(); attach();
+    if(!wanted || mutedFallback) return;
+    mutedFallback=true;
+    el.muted=true;
+    var pr=el.play();
+    (pr&&pr.then?pr:Promise.resolve()).then(function(){
+      EHLOG('running MUTED, waiting for a real click to un-mute');
+    }).catch(function(err){
+      mutedFallback=false;
+      EHLOG('even muted playback refused: '+(err&&err.name),'bad');
+    });
+  }
+
+  /* A real activation is the only thing that can lift the mute. */
+  function unmuteIfPossible(){
+    if(!mutedFallback||!wanted) return false;
+    var active = navigator.userActivation ? navigator.userActivation.isActive : true;
+    if(!active) return false;
+    el.muted=false; mutedFallback=false;
+    setVol(0);
+    if(el.paused){ var pr=el.play(); if(pr&&pr.catch) pr.catch(function(){}); }
+    EHLOG('un-muted on a real activation','good');
+    confirm();
+    return true;
   }
 
   function silence(){
@@ -753,7 +812,9 @@ window.EHLOG=function(){};
     if(e && e===lastEvt) return;            /* bound twice, so it arrives twice */
     lastEvt=e;
     if(e && e.target && e.target.nodeType===1 && (e.target===btn || btn.contains(e.target))) return;
-    if(wanted) attempt();
+    if(!wanted) return;
+    if(unmuteIfPossible()) return;
+    attempt();
   }
   function detach(){ WAKE.forEach(function(ev){
     window.removeEventListener(ev,wake); document.removeEventListener(ev,wake); }); }
@@ -761,7 +822,7 @@ window.EHLOG=function(){};
     window.addEventListener(ev,wake,{passive:true}); document.addEventListener(ev,wake,{passive:true}); }); }
 
   btn.addEventListener('click',function(){
-    if(wanted && !playing){ attempt(); return; }   /* invite state: they want it ON */
+    if(wanted && !playing){ if(!unmuteIfPossible()) attempt(); return; }  /* invite: they want it ON */
     if(playing){
       detach(); wanted=false;
       try{localStorage.setItem('eh-music','off')}catch(e){}
@@ -776,6 +837,20 @@ window.EHLOG=function(){};
   document.addEventListener('visibilitychange',function(){
     if(document.hidden||!wanted||!playing) return;
     if(el.paused){ var pr=el.play(); if(pr&&pr.catch) pr.catch(function(){}); }
+  });
+
+  /* If the browser stops it on us while the visitor still wants it, start listening
+     again rather than sitting silent. */
+  el.addEventListener('pause',function(){
+    if(wanted && playing){ EHLOG('element was paused by the browser','bad'); lost(); }
+  });
+  /* Deliberately NOT volumechange: one fade emits ~25 of them and buries the
+     lines that matter in a log someone has to read on a phone. */
+  ['playing','waiting','stalled','ended'].forEach(function(ev){
+    el.addEventListener(ev,function(){
+      EHLOG('audio "'+ev+'"  paused='+el.paused+' t='+el.currentTime.toFixed(2)+
+            ' vol='+el.volume.toFixed(2)+' muted='+el.muted+' ready='+el.readyState);
+    });
   });
 
   paint();

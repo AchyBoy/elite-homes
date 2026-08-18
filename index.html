@@ -146,6 +146,16 @@ section{padding:132px 0;position:relative}
 .live-note{margin-top:56px;padding:34px 40px;border-left:2px solid var(--brass);background:rgba(176,141,87,.06)}
 .live-note p{color:var(--paper);font-size:17px;max-width:74ch}
 
+.demo-note{margin-top:26px;padding:28px 32px;border:1px dashed rgba(176,141,87,.45);
+  background:rgba(176,141,87,.045)}
+.demo-note .dn-label{font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--brass);font-weight:500;margin-bottom:14px}
+.demo-note p{font-size:15.5px;line-height:1.7;max-width:80ch}
+.demo-note p+p{margin-top:12px}
+.demo-note strong{color:var(--paper);font-weight:500}
+.portal-dep{margin-top:22px;font-size:13.5px;color:var(--muted);line-height:1.6;max-width:52ch}
+@media (max-width:720px){.demo-note{padding:22px 20px}}
+
 /* ---------- portfolio ---------- */
 .grid{display:grid;grid-template-columns:repeat(6,1fr);gap:20px}
 .card{position:relative;overflow:hidden;cursor:pointer}
@@ -354,7 +364,13 @@ footer{padding:76px 0 40px;border-top:1px solid var(--line)}
     </div>
 
     <div class="live-note rv">
-      <p><strong>Nobody types any of this in.</strong> The phase, the progress and the photos come straight out of the software our crews already use on site, so this page is current whether or not anybody remembers to update it.</p>
+      <p><strong>Nobody types any of this in.</strong> The phase, the progress and the photos come straight off the phones of the crews on site, so this page is current whether or not anybody in the office remembers to update it.</p>
+    </div>
+
+    <div class="demo-note rv">
+      <div class="dn-label">Note for Elite Homes · not part of the site</div>
+      <p><strong>This section only stays live if the work is being logged in JobHub Go.</strong> The phases, the progress and the photos on this page come out of the app the crews carry on site. Same for the owner portal further down, and for the weekly photos we promise your buyers.</p>
+      <p>So it is worth being straight about it. If Elite Homes and the crews are in the app, this page updates itself and nobody touches it. If they are not, these sections still work, but somebody in the office has to type them in every week, and that is the part that always slips.</p>
     </div>
   </div>
 </section>
@@ -436,6 +452,7 @@ footer{padding:76px 0 40px;border-top:1px solid var(--line)}
         <li><span class="tick">✦</span><div><b>Draws and documents</b><small>Permits, plans and invoices, no digging through email.</small></div></li>
       </ul>
       <a href="#cta" class="btn btn-solid" style="margin-top:38px">See a Demo</a>
+      <p class="portal-dep">Note for Elite Homes: the portal is fed by JobHub Go too. What your buyers see is what the crews logged on site that day.</p>
     </div>
     <div class="rv">
       <div class="phone">

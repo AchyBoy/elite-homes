@@ -643,10 +643,15 @@ window.EHLOG=function(){};
   if(!/[?&]debug=1/.test(location.search)) return;
   var box=document.createElement('div'); box.id='ehdbg'; box.className='show';
   box.innerHTML='<div class="hd"><b>MUSIC LOG</b>'+
-    '<button id="ehcopy">Copy</button><button id="ehclose">Hide</button></div>'+
+    '<button id="ehreset">Reset</button><button id="ehcopy">Copy</button><button id="ehclose">Hide</button></div>'+
     '<div class="body" id="ehbody"></div>';
   function mount(){ document.body.appendChild(box);
     document.getElementById('ehclose').onclick=function(){box.classList.remove('show')};
+    /* Clears a remembered mute, so a test always starts from a clean visitor. */
+    document.getElementById('ehreset').onclick=function(){
+      try{localStorage.removeItem('eh-music')}catch(e){}
+      location.reload();
+    };
     document.getElementById('ehcopy').onclick=function(){
       var t=lines.join('\n');
       if(navigator.clipboard&&navigator.clipboard.writeText){

@@ -678,7 +678,7 @@ window.EHLOG=function(){};
       String(msg).replace(/&/g,'&amp;').replace(/</g,'&lt;');
     b.appendChild(d); b.scrollTop=b.scrollHeight;
   };
-  EHLOG('BUILD 20260818-164707   <- if this is not the build you were told to test, you are on a CACHED page');
+  EHLOG('BUILD 20260818-164825   <- if this is not the build you were told to test, you are on a CACHED page');
   EHLOG('UA '+navigator.userAgent);
   EHLOG('activation API: '+(navigator.userActivation?'yes':'no'));
 })();
@@ -705,7 +705,13 @@ window.EHLOG=function(){};
   /* wheel and scroll are in here deliberately. They do not grant activation, but
      the Mac log showed hundreds of them firing while nothing even attempted to
      play, and an attempt that gets refused costs nothing. */
-  var WAKE=['click','touchend','pointerup','touchstart','keydown','wheel','scroll'];
+  /* mousedown/mouseup and keyup are here because Safari DOES count them as
+     permission, and they catch two things a plain click listener misses: dragging
+     the scrollbar, and scrolling with the arrow keys or space bar. Deliberately NOT
+     pointerdown: on iOS it fires alongside touchstart and a failed early attempt
+     can swallow the one event that would have worked, which is the trap Noel hit. */
+  var WAKE=['click','mousedown','mouseup','touchend','pointerup','touchstart',
+            'keydown','keyup','wheel','scroll'];
 
   var wanted=true, playing=false, confirmTimer=null;
   var mutedFallback=false;   /* running silently, waiting for a real activation */

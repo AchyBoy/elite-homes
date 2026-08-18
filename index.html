@@ -707,6 +707,8 @@ window.EHLOG=function(){};
 
   var wanted=true, playing=false, confirmTimer=null;
   var mutedFallback=false;   /* running silently, waiting for a real activation */
+  var attempting=false, lastTry=0;
+  var audibleBlocked=false;  /* set once the browser has paused audible playback */
   try{ wanted = localStorage.getItem('eh-music')!=='off' }catch(e){}
 
   function setVol(v){ try{ el.volume=Math.max(0,Math.min(1,v)) }catch(e){} }
@@ -729,7 +731,18 @@ window.EHLOG=function(){};
   }
 
   function attempt(){
-    if(playing||!wanted) return;
+    /* Re-entry guard. Without it every scroll event fired a fresh attempt, and each
+       one restarted the verification timer, so it could never finish while the
+       visitor was still scrolling. Hundreds of play() calls, and no music until
+       they stopped moving. */
+    if(playing||!wanted||attempting) return;
+    var now=Date.now();
+    if(now-lastTry<500) return;
+    lastTry=now;
+    attempting=true;
+    /* Safari has already shown it will pause audible playback here, so stop
+       provoking it and go straight to the silent route. */
+    if(audibleBlocked && !mutedFallback){ attempting=false; goMuted(); return; }
     EHLOG('attempt readyState='+el.readyState+
           ' buffered='+(el.buffered.length?el.buffered.end(0).toFixed(0)+'s':'0')+
           ' activation='+(navigator.userActivation?navigator.userActivation.isActive:'?'));
@@ -740,6 +753,7 @@ window.EHLOG=function(){};
       EHLOG('play() resolved, now verifying it actually runs');
       confirm();
     }).catch(function(err){
+      attempting=false;
       EHLOG('play() refused: '+(err&&err.name),'bad');   /* keep listening */
     });
   }
@@ -756,17 +770,17 @@ window.EHLOG=function(){};
       if(!wanted){ clearInterval(confirmTimer); return; }
       if(el.paused){
         EHLOG('declined: element paused itself after play()','bad');
-        clearInterval(confirmTimer); lost(); return;
+        clearInterval(confirmTimer); attempting=false; lost(); return;
       }
       if(el.currentTime > t0 + 0.05){
-        clearInterval(confirmTimer);
+        clearInterval(confirmTimer); attempting=false;
         playing=true; detach(); paint(); fadeTo(VOL);
         EHLOG('CONFIRMED playing, t='+el.currentTime.toFixed(2)+' vol='+el.volume.toFixed(2),'good');
         return;
       }
       if(n>16){
         EHLOG('declined: resolved but currentTime never moved (t='+el.currentTime.toFixed(2)+')','bad');
-        clearInterval(confirmTimer); lost();
+        clearInterval(confirmTimer); attempting=false; lost();
       }
     },250);
   }
@@ -776,10 +790,13 @@ window.EHLOG=function(){};
      rolling and buffered, and the first click brings sound instantly rather than
      starting a fresh load. */
   function lost(){
-    playing=false; paint(); attach();
+    playing=false; attempting=false; paint(); attach(); goMuted();
+  }
+
+  function goMuted(){
     if(!wanted || mutedFallback) return;
     mutedFallback=true;
-    el.muted=true;
+    el.muted=true; setVol(VOL);
     var pr=el.play();
     (pr&&pr.then?pr:Promise.resolve()).then(function(){
       EHLOG('running MUTED, waiting for a real click to un-mute');
@@ -842,7 +859,11 @@ window.EHLOG=function(){};
   /* If the browser stops it on us while the visitor still wants it, start listening
      again rather than sitting silent. */
   el.addEventListener('pause',function(){
-    if(wanted && playing){ EHLOG('element was paused by the browser','bad'); lost(); }
+    if(wanted && playing){
+      audibleBlocked=true;   /* remember it, so we do not keep provoking a refusal */
+      EHLOG('element was paused by the browser: audible autoplay is not allowed here','bad');
+      lost();
+    }
   });
   /* Deliberately NOT volumechange: one fade emits ~25 of them and buries the
      lines that matter in a log someone has to read on a phone. */

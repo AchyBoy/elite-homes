@@ -242,6 +242,22 @@ footer{padding:76px 0 40px;border-top:1px solid var(--line)}
 .demo-tag:hover{color:var(--brass-lt);border-color:rgba(176,141,87,.45)}
 @media (max-width:720px){.demo-tag{left:12px;bottom:12px;font-size:9.5px;padding:7px 11px}}
 
+.music-btn{position:fixed;right:18px;bottom:18px;z-index:200;
+  width:44px;height:44px;border-radius:50%;padding:0;
+  border:1px solid var(--line);background:rgba(13,14,16,.82);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  color:var(--muted);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:color .35s,border-color .35s}
+.music-btn:hover{color:var(--brass-lt);border-color:rgba(176,141,87,.5)}
+.music-btn.on{color:var(--brass);border-color:rgba(176,141,87,.6)}
+.music-btn i{display:block;width:2px;height:5px;margin:0 1.5px;background:currentColor}
+.music-btn.on i{animation:eq 1.15s ease-in-out infinite}
+.music-btn.on i:nth-child(2){animation-delay:.19s}
+.music-btn.on i:nth-child(3){animation-delay:.38s}
+@keyframes eq{0%,100%{height:5px}50%{height:15px}}
+@media (max-width:720px){.music-btn{right:12px;bottom:12px;width:40px;height:40px}}
+
 /* ---------- reveal ---------- */
 .reveal-on .rv{opacity:0;transform:translateY(26px);transition:opacity 1s cubic-bezier(.2,.7,.3,1),transform 1s cubic-bezier(.2,.7,.3,1)}
 .rv.in{opacity:1;transform:none}
@@ -583,6 +599,89 @@ document.addEventListener('visibilitychange',function(){if(!document.hidden)swee
 sweep();
 setTimeout(sweep,1200);
 </script>
+<audio id="bgm" loop preload="none" playsinline>
+  <source src="music.m4a" type="audio/mp4">
+</audio>
+<button class="music-btn" id="musicbtn" type="button" aria-pressed="false" aria-label="Play music" title="Music">
+  <i></i><i></i><i></i>
+</button>
 <a class="demo-tag" href="#work">Concept demo · sample content &amp; placeholder photos</a>
+<script>
+/* Background music. Off until asked for, kept in its own scope on purpose:
+   a top-level name collision on the Noel site cost four rounds of debugging. */
+(function(){
+  var btn=document.getElementById('musicbtn'), el=document.getElementById('bgm');
+  if(!btn||!el) return;
+  var AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC||!el.canPlayType||!el.canPlayType('audio/mp4')){ btn.style.display='none'; return; }
+
+  var VOL=0.34, FADE=1.6, ctx=null, gain=null, src=null, on=false, startAt=0, pausedByTab=false;
+
+  function wire(){
+    ctx=new AC();
+    gain=ctx.createGain(); gain.gain.value=0.0001;
+    /* iOS ignores element.volume entirely, so every level change goes through the GainNode. */
+    src=ctx.createMediaElementSource(el);
+    src.connect(gain); gain.connect(ctx.destination);
+  }
+
+  function level(){
+    if(!on||!ctx) return;
+    var d=el.duration||0, t=el.currentTime||0;
+    var env=Math.min(1,(ctx.currentTime-startAt)/FADE);
+    var seam=1;
+    if(d){ if(t<FADE) seam=Math.min(seam,t/FADE); if(t>d-FADE) seam=Math.min(seam,Math.max(0,(d-t)/FADE)); }
+    gain.gain.setTargetAtTime(Math.max(0.0001,VOL*env*seam), ctx.currentTime, 0.09);
+  }
+
+  function paint(){
+    btn.classList.toggle('on',on);
+    btn.setAttribute('aria-pressed',on?'true':'false');
+    btn.setAttribute('aria-label',on?'Mute music':'Play music');
+  }
+
+  function start(remember){
+    if(on) return;
+    if(!ctx) wire();
+    ctx.resume().then(function(){
+      var pr=el.play();
+      return (pr&&pr.then)?pr:Promise.resolve();
+    }).then(function(){
+      on=true; startAt=ctx.currentTime; level(); paint();
+      if(remember!==false){try{localStorage.setItem('eh-music','on')}catch(e){}}
+    }).catch(function(){ /* refused: leave the listeners up and wait for a real gesture */ });
+  }
+
+  function stop(remember){
+    if(!on) return;
+    on=false; paint();
+    if(ctx){
+      gain.gain.cancelScheduledValues(ctx.currentTime);
+      gain.gain.setTargetAtTime(0.0001,ctx.currentTime,0.18);
+    }
+    setTimeout(function(){ if(!on) el.pause() },700);
+    if(remember!==false){try{localStorage.setItem('eh-music','off')}catch(e){}}
+  }
+
+  btn.addEventListener('click',function(){ on?stop():start() });
+  el.addEventListener('timeupdate',level);
+
+  /* Courtesy: nothing playing into a tab nobody is looking at. */
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden && on){ pausedByTab=true; stop(false) }
+    else if(!document.hidden && pausedByTab){ pausedByTab=false; start(false) }
+  });
+
+  /* Restore a previous choice, but only off a real end-of-gesture event.
+     Scrolling is not a gesture, and pointerdown/touchstart get refused. */
+  var want=false; try{ want=localStorage.getItem('eh-music')==='on' }catch(e){}
+  if(want){
+    var evs=['click','touchend','pointerup','keydown'];
+    var wake=function(){ if(on){evs.forEach(function(v){document.removeEventListener(v,wake)});return} start(false) };
+    evs.forEach(function(v){document.addEventListener(v,wake)});
+  }
+  paint();
+})();
+</script>
 </body>
 </html>

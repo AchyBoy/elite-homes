@@ -242,21 +242,28 @@ footer{padding:76px 0 40px;border-top:1px solid var(--line)}
 .demo-tag:hover{color:var(--brass-lt);border-color:rgba(176,141,87,.45)}
 @media (max-width:720px){.demo-tag{left:12px;bottom:12px;font-size:9.5px;padding:7px 11px}}
 
-.music-btn{position:fixed;right:18px;bottom:18px;z-index:200;
-  width:44px;height:44px;border-radius:50%;padding:0;
-  border:1px solid var(--line);background:rgba(13,14,16,.82);
-  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-  color:var(--muted);cursor:pointer;
-  display:flex;align-items:center;justify-content:center;
-  transition:color .35s,border-color .35s}
-.music-btn:hover{color:var(--brass-lt);border-color:rgba(176,141,87,.5)}
-.music-btn.on{color:var(--brass);border-color:rgba(176,141,87,.6)}
-.music-btn i{display:block;width:2px;height:5px;margin:0 1.5px;background:currentColor}
+.music-btn{position:fixed;right:20px;bottom:20px;z-index:200;
+  display:flex;align-items:center;gap:11px;
+  padding:11px 19px 11px 16px;border-radius:100px;
+  border:1px solid rgba(176,141,87,.55);
+  background:rgba(13,14,16,.92);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  color:var(--brass-lt);cursor:pointer;
+  font-family:'Inter',sans-serif;font-size:10.5px;font-weight:500;
+  letter-spacing:.15em;text-transform:uppercase;
+  box-shadow:0 10px 30px rgba(0,0,0,.45);
+  transition:color .3s,border-color .3s,background .3s}
+.music-btn:hover{color:var(--paper);border-color:var(--brass);background:rgba(23,20,16,.95)}
+.music-btn .eq{display:flex;align-items:center;height:16px;flex:none}
+.music-btn i{display:block;width:2px;height:4px;margin:0 1.5px;background:currentColor;transition:height .3s}
 .music-btn.on i{animation:eq 1.15s ease-in-out infinite}
 .music-btn.on i:nth-child(2){animation-delay:.19s}
 .music-btn.on i:nth-child(3){animation-delay:.38s}
-@keyframes eq{0%,100%{height:5px}50%{height:15px}}
-@media (max-width:720px){.music-btn{right:12px;bottom:12px;width:40px;height:40px}}
+.music-btn.on{color:var(--brass);border-color:rgba(176,141,87,.75)}
+@keyframes eq{0%,100%{height:4px}50%{height:16px}}
+@media (max-width:720px){
+  .music-btn{right:12px;bottom:12px;padding:9px 15px 9px 13px;font-size:9.5px;gap:9px}
+}
 
 /* ---------- reveal ---------- */
 .reveal-on .rv{opacity:0;transform:translateY(26px);transition:opacity 1s cubic-bezier(.2,.7,.3,1),transform 1s cubic-bezier(.2,.7,.3,1)}
@@ -602,20 +609,30 @@ setTimeout(sweep,1200);
 <audio id="bgm" loop preload="none" playsinline>
   <source src="music.m4a" type="audio/mp4">
 </audio>
-<button class="music-btn" id="musicbtn" type="button" aria-pressed="false" aria-label="Play music" title="Music">
-  <i></i><i></i><i></i>
+<button class="music-btn on" id="musicbtn" type="button" aria-pressed="true" aria-label="Turn music off">
+  <span class="eq"><i></i><i></i><i></i></span><span id="musiclbl">Sound on</span>
 </button>
 <a class="demo-tag" href="#work">Concept demo · sample content &amp; placeholder photos</a>
 <script>
-/* Background music. Off until asked for, kept in its own scope on purpose:
-   a top-level name collision on the Noel site cost four rounds of debugging. */
+/* Background music. Wanted by default; browsers will not let it sound before the
+   visitor touches something, so we arm it and start on the first real gesture.
+   Own scope on purpose: a top-level name collision on the Noel site cost four rounds. */
 (function(){
-  var btn=document.getElementById('musicbtn'), el=document.getElementById('bgm');
+  var btn=document.getElementById('musicbtn'), lbl=document.getElementById('musiclbl'),
+      el=document.getElementById('bgm');
   if(!btn||!el) return;
   var AC=window.AudioContext||window.webkitAudioContext;
   if(!AC||!el.canPlayType||!el.canPlayType('audio/mp4')){ btn.style.display='none'; return; }
 
-  var VOL=0.34, FADE=1.6, ctx=null, gain=null, src=null, on=false, startAt=0, pausedByTab=false;
+  var VOL=0.34, FADE=1.6;
+  var ctx=null, gain=null, src=null;
+  var wanted=true;        // what the visitor has asked for
+  var playing=false;      // whether sound is actually coming out
+  var pausedByTab=false;
+
+  try{ wanted = localStorage.getItem('eh-music')!=='off' }catch(e){}
+  /* Only pull the file down for people who have not already muted us. */
+  if(wanted) el.preload='auto';
 
   function wire(){
     ctx=new AC();
@@ -625,8 +642,9 @@ setTimeout(sweep,1200);
     src.connect(gain); gain.connect(ctx.destination);
   }
 
+  var startAt=0;
   function level(){
-    if(!on||!ctx) return;
+    if(!playing||!ctx) return;
     var d=el.duration||0, t=el.currentTime||0;
     var env=Math.min(1,(ctx.currentTime-startAt)/FADE);
     var seam=1;
@@ -635,52 +653,58 @@ setTimeout(sweep,1200);
   }
 
   function paint(){
-    btn.classList.toggle('on',on);
-    btn.setAttribute('aria-pressed',on?'true':'false');
-    btn.setAttribute('aria-label',on?'Mute music':'Play music');
+    btn.classList.toggle('on',wanted);
+    btn.setAttribute('aria-pressed',wanted?'true':'false');
+    btn.setAttribute('aria-label',wanted?'Turn music off':'Turn music on');
+    if(lbl) lbl.textContent = wanted ? 'Sound on' : 'Sound off';
   }
 
-  function start(remember){
-    if(on) return;
+  function attempt(){
+    if(!wanted||playing) return;
     if(!ctx) wire();
     ctx.resume().then(function(){
       var pr=el.play();
       return (pr&&pr.then)?pr:Promise.resolve();
     }).then(function(){
-      on=true; startAt=ctx.currentTime; level(); paint();
-      if(remember!==false){try{localStorage.setItem('eh-music','on')}catch(e){}}
-    }).catch(function(){ /* refused: leave the listeners up and wait for a real gesture */ });
+      if(!wanted){ el.pause(); return; }   // muted while we were starting
+      playing=true; startAt=ctx.currentTime; level();
+    }).catch(function(){ /* refused: the gesture listeners below stay armed */ });
   }
 
-  function stop(remember){
-    if(!on) return;
-    on=false; paint();
-    if(ctx){
+  function silence(){
+    playing=false;
+    if(ctx&&gain){
       gain.gain.cancelScheduledValues(ctx.currentTime);
       gain.gain.setTargetAtTime(0.0001,ctx.currentTime,0.18);
     }
-    setTimeout(function(){ if(!on) el.pause() },700);
-    if(remember!==false){try{localStorage.setItem('eh-music','off')}catch(e){}}
+    setTimeout(function(){ if(!playing) el.pause() },700);
   }
 
-  btn.addEventListener('click',function(){ on?stop():start() });
+  btn.addEventListener('click',function(){
+    wanted=!wanted; paint();
+    try{ localStorage.setItem('eh-music', wanted?'on':'off') }catch(e){}
+    if(wanted){ el.preload='auto'; attempt(); } else { silence(); }
+  });
+
   el.addEventListener('timeupdate',level);
 
   /* Courtesy: nothing playing into a tab nobody is looking at. */
   document.addEventListener('visibilitychange',function(){
-    if(document.hidden && on){ pausedByTab=true; stop(false) }
-    else if(!document.hidden && pausedByTab){ pausedByTab=false; start(false) }
+    if(document.hidden){ if(playing){ pausedByTab=true; silence() } }
+    else if(pausedByTab){ pausedByTab=false; attempt() }
   });
 
-  /* Restore a previous choice, but only off a real end-of-gesture event.
-     Scrolling is not a gesture, and pointerdown/touchstart get refused. */
-  var want=false; try{ want=localStorage.getItem('eh-music')==='on' }catch(e){}
-  if(want){
-    var evs=['click','touchend','pointerup','keydown'];
-    var wake=function(){ if(on){evs.forEach(function(v){document.removeEventListener(v,wake)});return} start(false) };
-    evs.forEach(function(v){document.addEventListener(v,wake)});
+  /* Keep listening. Scrolling is not a gesture and pointerdown/touchstart get refused,
+     so only end-of-gesture events count, and we never stop listening after a refusal. */
+  var evs=['click','touchend','pointerup','keydown'];
+  function wake(){
+    if(playing){ evs.forEach(function(v){document.removeEventListener(v,wake,true)}); return; }
+    attempt();
   }
+  evs.forEach(function(v){document.addEventListener(v,wake,true)});
+
   paint();
+  attempt();   // works where the visitor already has engagement with the site
 })();
 </script>
 </body>

@@ -682,18 +682,13 @@ window.EHLOG=function(){};
 })();
 </script>
 <script>
-/* Background music, on by default.
-   Built on what the Noel site proved on a real iPhone, and every rule here is
-   one that cost rounds of debugging there or on this page:
-     - play() must be called SYNCHRONOUSLY inside the gesture handler. Waiting on
-       an AudioContext first and playing in a .then() spends the permission and
-       fails on iOS, which is what made this page need a deliberate tap.
-     - the file has to be buffered BEFORE the gesture. With preload="none" the tap
-       starts the download and the permission lapses before audio arrives.
-     - touchstart matters: on iOS a scroll flick is touch events, which is why
-       scrolling starts the music on Noel.
-     - an in-flight attempt is never blocked; a pending play() from an earlier
-       event in the same tap would swallow the one event that counts.
+/* Background music, on by default. NO WEB AUDIO, and that is the whole point.
+   The iPhone log proved it: play() resolved on a scroll's touchstart, but the
+   audio context came up SUSPENDED, because iOS will not resume one without a
+   real activation and a scroll is not one. Since the element had already been
+   re-routed into that context, it played perfectly into a dead graph and made no
+   sound at all. Volume and the fades are baked into music.m4a instead, so nothing
+   here needs a context. This is the shape the Noel site has always used.
    Own scope on purpose: a top-level name collision on Noel cost four rounds. */
 (function(){
   var btn=document.getElementById('musicbtn'), lbl=document.getElementById('musiclbl'),
@@ -701,55 +696,29 @@ window.EHLOG=function(){};
   if(!btn||!el) return;
   if(!el.canPlayType||!el.canPlayType('audio/mp4')){ btn.style.display='none'; return; }
 
-  var VOL=0.34, FADE=1.6;
-  var WAKE=['click','touchend','pointerup','touchstart','keydown'];
+  /* Desktop honours element.volume so it gets a soft entry; iOS ignores it, which
+     is fine because the file itself already fades in and sits at background level. */
+  var VOL=1, fadeTimer=null;
+
+  /* wheel and scroll are in here deliberately. They do not grant activation, but
+     the Mac log showed hundreds of them firing while nothing even attempted to
+     play, and an attempt that gets refused costs nothing. */
+  var WAKE=['click','touchend','pointerup','touchstart','keydown','wheel','scroll'];
 
   var wanted=true, playing=false;
-  var graph=null, triedGraph=false, startedAt=0, ticker=null;
-
   try{ wanted = localStorage.getItem('eh-music')!=='off' }catch(e){}
 
-  /* iOS ignores element.volume entirely, so level control needs a GainNode. The
-     catch is that connecting the element re-routes its audio: if the context
-     never runs, the element plays into a dead graph and you hear nothing. So the
-     graph is only ever built inside a real gesture, and torn back down if the
-     context does not reach 'running'. */
-  function makeGraph(){
-    var AC=window.AudioContext||window.webkitAudioContext;
-    if(!AC) return null;
-    try{
-      var ctx=new AC();
-      var gain=ctx.createGain(); gain.gain.value=0.0001;
-      var src=ctx.createMediaElementSource(el);
-      src.connect(gain); gain.connect(ctx.destination);
-      ctx.resume();
-      return {ctx:ctx,gain:gain,src:src};
-    }catch(e){ return null }
-  }
-  /* Never tear the graph down. Once createMediaElementSource has run, the element's
-     audio belongs to the graph permanently: disconnecting does not hand it back to
-     the default output, it just goes silent. Closing the context kills the sound
-     outright. The only correct repair is to resume. */
-  function revive(){ if(graph){ try{ graph.ctx.resume() }catch(e){} } }
-  function setLevel(v){
-    if(graph && graph.ctx.state==='running'){
-      graph.gain.gain.setTargetAtTime(Math.max(0.0001,v), graph.ctx.currentTime, 0.09);
-    } else {
-      try{ el.volume=Math.max(0,Math.min(1,v)) }catch(e){}
-    }
-  }
-  function tick(){
-    if(!playing) return;
-    var d=el.duration||0, t=el.currentTime||0;
-    var env=Math.min(1,((Date.now()-startedAt)/1000)/FADE);
-    var seam=1;
-    if(d){ if(t<FADE) seam=Math.min(seam,t/FADE); if(t>d-FADE) seam=Math.min(seam,Math.max(0,(d-t)/FADE)); }
-    setLevel(VOL*env*seam);
+  function setVol(v){ try{ el.volume=Math.max(0,Math.min(1,v)) }catch(e){} }
+  function fadeTo(target,done){
+    clearInterval(fadeTimer);
+    fadeTimer=setInterval(function(){
+      var v=el.volume, step=0.04;
+      if(Math.abs(v-target)<=step){ setVol(target); clearInterval(fadeTimer); if(done) done(); }
+      else setVol(v<target ? v+step : v-step);
+    },40);
   }
 
   function paint(){
-    /* Wanting music and hearing it are different things for the stretch between
-       page load and the first interaction, so there are three states, not two. */
     var inviting = wanted && !playing;
     btn.classList.toggle('on', wanted && playing);
     btn.classList.toggle('invite', inviting);
@@ -758,74 +727,41 @@ window.EHLOG=function(){};
     if(lbl) lbl.textContent = inviting?'Play music':(wanted?'Sound on':'Sound off');
   }
 
-  function attempt(fromGesture){
+  function attempt(){
     if(playing||!wanted) return;
-    /* ORDER IS THE WHOLE TRICK. Noel works because it calls a bare play() straight
-       from the handler. Building an AudioContext and re-routing the element BEFORE
-       play() is what iOS refuses, so the graph is built immediately AFTER the play
-       call instead. play() has already claimed the gesture by then. */
-    try{ if(!graph) el.volume=0 }catch(e){}
-    EHLOG('attempt(gesture='+!!fromGesture+') readyState='+el.readyState+
+    EHLOG('attempt readyState='+el.readyState+
           ' buffered='+(el.buffered.length?el.buffered.end(0).toFixed(0)+'s':'0')+
           ' activation='+(navigator.userActivation?navigator.userActivation.isActive:'?'));
-
-    var pr = el.play();                       /* BARE, FIRST, inside the gesture */
-
-    if(fromGesture && !triedGraph){
-      triedGraph=true; graph=makeGraph();
-      EHLOG('graph '+(graph?('built, ctx='+graph.ctx.state):'unavailable'));
-      if(graph){ try{ el.volume=1 }catch(e){} }
-    } else if(graph && graph.ctx.state==='suspended'){ try{graph.ctx.resume()}catch(e){} }
-
+    setVol(0);
+    var pr=el.play();                       /* bare, first, nothing before it */
     (pr&&pr.then?pr:Promise.resolve()).then(function(){
-      EHLOG('play() RESOLVED','good');
-      if(!wanted){ el.pause(); return; }      /* muted while play() was in flight */
-      playing=true; startedAt=Date.now();
-      detach(); paint();
-      clearInterval(ticker); ticker=setInterval(tick,50); tick();
-      /* A suspended context swallows the sound, so keep nudging it awake rather
-         than tearing anything down. A backgrounded tab suspends it too, which is
-         normal and not a failure. */
-      setTimeout(revive,600);
+      if(!wanted){ el.pause(); return; }    /* muted while play() was in flight */
+      playing=true; detach(); paint(); fadeTo(VOL);
+      EHLOG('play() RESOLVED, sound is out','good');
     }).catch(function(err){
-      EHLOG('play() REJECTED '+(err&&err.name)+': '+(err&&err.message||''),'bad');
-      /* refused: keep listening, never give up */
+      EHLOG('play() refused: '+(err&&err.name),'bad');   /* keep listening */
     });
   }
 
   function silence(){
-    playing=false; clearInterval(ticker); paint();
-    var step=0.06, v=1;
-    var out=setInterval(function(){
-      v-=step; if(v<=0){ clearInterval(out); setLevel(0); el.pause(); }
-      else setLevel(VOL*v);
-    },40);
+    playing=false; paint();
+    fadeTo(0,function(){ el.pause() });
   }
 
   var lastEvt=null;
   function wake(e){
-    if(e && e===lastEvt) return;              /* bound twice, so it arrives twice */
+    if(e && e===lastEvt) return;            /* bound twice, so it arrives twice */
     lastEvt=e;
-    EHLOG('wake '+(e&&e.type)+' trusted='+(e&&e.isTrusted)+
-          ' target=<'+((e&&e.target&&e.target.tagName)||'?').toLowerCase()+'>');
-    if(e && e.target && (e.target===btn || btn.contains(e.target))) { EHLOG('  ignored: button has its own handler'); return; }
-    if(wanted) attempt(true);
+    if(e && e.target && e.target.nodeType===1 && (e.target===btn || btn.contains(e.target))) return;
+    if(wanted) attempt();
   }
-  function detach(){
-    WAKE.forEach(function(ev){
-      window.removeEventListener(ev,wake);
-      document.removeEventListener(ev,wake);
-    });
-  }
-  function attach(){
-    WAKE.forEach(function(ev){
-      window.addEventListener(ev,wake,{passive:true});
-      document.addEventListener(ev,wake,{passive:true});
-    });
-  }
+  function detach(){ WAKE.forEach(function(ev){
+    window.removeEventListener(ev,wake); document.removeEventListener(ev,wake); }); }
+  function attach(){ WAKE.forEach(function(ev){
+    window.addEventListener(ev,wake,{passive:true}); document.addEventListener(ev,wake,{passive:true}); }); }
 
   btn.addEventListener('click',function(){
-    if(wanted && !playing){ attempt(true); return; }   /* invite state: they want it ON */
+    if(wanted && !playing){ attempt(); return; }   /* invite state: they want it ON */
     if(playing){
       detach(); wanted=false;
       try{localStorage.setItem('eh-music','off')}catch(e){}
@@ -833,33 +769,24 @@ window.EHLOG=function(){};
     } else {
       wanted=true;
       try{localStorage.setItem('eh-music','on')}catch(e){}
-      paint(); attach(); attempt(true);
+      paint(); attach(); attempt();
     }
   });
 
-  /* Browsers already suspend audio for a backgrounded tab, so there is nothing to
-     pause by hand. Coming back just needs the context woken and playback nudged. */
   document.addEventListener('visibilitychange',function(){
     if(document.hidden||!wanted||!playing) return;
-    revive();
     if(el.paused){ var pr=el.play(); if(pr&&pr.catch) pr.catch(function(){}); }
   });
 
   paint();
   if(wanted) attach();
-  EHLOG('init wanted='+wanted+' canPlay='+el.canPlayType('audio/mp4')+' preload='+el.preload);
-  /* Watch scroll separately: it will not grant permission, but knowing whether it
-     fires at all while touch events do not is the thing worth seeing. */
-  ['scroll','touchmove','wheel'].forEach(function(ev){
-    var n=0;
-    window.addEventListener(ev,function(){ if(++n<3||n%25===0) EHLOG('(saw '+ev+' #'+n+')'); },{passive:true});
-  });
+  EHLOG('init wanted='+wanted+' no WebAudio, level baked into the file');
 
-  /* Buffer once the page's own work is done, so the gesture is not waiting on
-     1.4MB to arrive. Deferred to load so it never competes with the hero. */
+  /* Buffer once the page is done, so a gesture never waits on 1.4MB to arrive. */
   window.addEventListener('load',function(){
     if(!wanted||playing) return;
     try{ el.preload='auto'; el.load(); EHLOG('buffering started'); }catch(e){}
+    attempt();
   });
 })();
 </script>

@@ -736,6 +736,11 @@ window.EHLOG=function(){};
        visitor was still scrolling. Hundreds of play() calls, and no music until
        they stopped moving. */
     if(playing||!wanted||attempting) return;
+    /* While the muted fallback is running, the ONLY way out is a real activation
+       via unmuteIfPossible(). Letting a scroll re-enter here meant the clock was
+       advancing muted, verification called that success, and the page detached the
+       listeners that were waiting for the very click that would restore sound. */
+    if(mutedFallback){ return; }
     var now=Date.now();
     if(now-lastTry<500) return;
     lastTry=now;
@@ -774,6 +779,10 @@ window.EHLOG=function(){};
       }
       if(el.currentTime > t0 + 0.05){
         clearInterval(confirmTimer); attempting=false;
+        if(el.muted){        /* a moving clock is not sound if the element is muted */
+          EHLOG('advancing but MUTED, not counting that as playing','bad');
+          goMuted(); return;
+        }
         playing=true; detach(); paint(); fadeTo(VOL);
         EHLOG('CONFIRMED playing, t='+el.currentTime.toFixed(2)+' vol='+el.volume.toFixed(2),'good');
         return;
@@ -794,7 +803,9 @@ window.EHLOG=function(){};
   }
 
   function goMuted(){
-    if(!wanted || mutedFallback) return;
+    if(!wanted) return;
+    attach();              /* stay listening: a click is the only way back to sound */
+    if(mutedFallback) return;
     mutedFallback=true;
     el.muted=true; setVol(VOL);
     var pr=el.play();
@@ -810,8 +821,14 @@ window.EHLOG=function(){};
   function unmuteIfPossible(){
     if(!mutedFallback||!wanted) return false;
     var active = navigator.userActivation ? navigator.userActivation.isActive : true;
+    EHLOG('un-mute chance: activation='+active);
     if(!active) return false;
     el.muted=false; mutedFallback=false;
+    /* A click fires several events, and a sibling one reaching attempt() would see
+       the earlier refusal and send us straight back to muted, undoing this. Hold
+       the door until confirm() finishes. And a real activation supersedes that
+       earlier refusal, so clear it. */
+    audibleBlocked=false; attempting=true;
     setVol(0);
     if(el.paused){ var pr=el.play(); if(pr&&pr.catch) pr.catch(function(){}); }
     EHLOG('un-muted on a real activation','good');

@@ -619,6 +619,63 @@ setTimeout(sweep,1200);
   <span class="eq"><i></i><i></i><i></i></span><span id="musiclbl">Sound on</span>
 </button>
 <a class="demo-tag" href="#work">Concept demo · sample content &amp; placeholder photos</a>
+<style>
+#ehdbg{position:fixed;left:0;right:0;bottom:0;z-index:9999;max-height:46vh;
+  background:rgba(6,7,8,.96);border-top:1px solid var(--brass);
+  font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;color:#cfe8cf;display:none}
+#ehdbg.show{display:block}
+#ehdbg .hd{display:flex;gap:8px;align-items:center;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.12);
+  position:sticky;top:0;background:rgba(6,7,8,.98)}
+#ehdbg .hd b{color:var(--brass-lt);font-weight:600;letter-spacing:.08em;flex:1}
+#ehdbg button{font:inherit;padding:5px 11px;border:1px solid var(--brass);background:transparent;
+  color:var(--brass-lt);border-radius:3px}
+#ehdbg .body{overflow:auto;max-height:36vh;padding:8px 10px;white-space:pre-wrap;word-break:break-word}
+#ehdbg .t{color:#7d8a7d}
+#ehdbg .bad{color:#ff8f7a}
+#ehdbg .good{color:#8fe39a}
+</style>
+<script>
+/* Diagnostics for the music autostart, off unless the URL says ?debug=1.
+   A customer must never see this; it exists because iOS cannot be inspected
+   from here and guessing at the cause has already been wrong once. */
+window.EHLOG=function(){};
+(function(){
+  if(!/[?&]debug=1/.test(location.search)) return;
+  var box=document.createElement('div'); box.id='ehdbg'; box.className='show';
+  box.innerHTML='<div class="hd"><b>MUSIC LOG</b>'+
+    '<button id="ehcopy">Copy</button><button id="ehclose">Hide</button></div>'+
+    '<div class="body" id="ehbody"></div>';
+  function mount(){ document.body.appendChild(box);
+    document.getElementById('ehclose').onclick=function(){box.classList.remove('show')};
+    document.getElementById('ehcopy').onclick=function(){
+      var t=lines.join('\n');
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(t).then(function(){this.textContent='Copied'}.bind(this));
+      } else {
+        var ta=document.createElement('textarea'); ta.value=t; document.body.appendChild(ta);
+        ta.select(); try{document.execCommand('copy')}catch(e){} ta.remove(); this.textContent='Copied';
+      }
+    };
+  }
+  if(document.body) mount(); else document.addEventListener('DOMContentLoaded',mount);
+
+  var t0=Date.now(), lines=[];
+  window.EHLOG=function(msg,kind){
+    var ms=Date.now()-t0;
+    var txt='+'+(ms/1000).toFixed(2)+'s  '+msg;
+    lines.push(txt);
+    if(lines.length>400) lines.shift();
+    var b=document.getElementById('ehbody'); if(!b) return;
+    var d=document.createElement('div');
+    if(kind) d.className=kind;
+    d.innerHTML='<span class="t">+'+(ms/1000).toFixed(2)+'s</span>  '+
+      String(msg).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    b.appendChild(d); b.scrollTop=b.scrollHeight;
+  };
+  EHLOG('UA '+navigator.userAgent);
+  EHLOG('activation API: '+(navigator.userActivation?'yes':'no'));
+})();
+</script>
 <script>
 /* Background music, on by default.
    Built on what the Noel site proved on a real iPhone, and every rule here is
@@ -698,12 +755,25 @@ setTimeout(sweep,1200);
 
   function attempt(fromGesture){
     if(playing||!wanted) return;
-    if(fromGesture && !triedGraph){ triedGraph=true; graph=makeGraph(); }
-    else if(graph && graph.ctx.state==='suspended'){ try{graph.ctx.resume()}catch(e){} }
-    if(!graph) { try{ el.volume=0 }catch(e){} }
+    /* ORDER IS THE WHOLE TRICK. Noel works because it calls a bare play() straight
+       from the handler. Building an AudioContext and re-routing the element BEFORE
+       play() is what iOS refuses, so the graph is built immediately AFTER the play
+       call instead. play() has already claimed the gesture by then. */
+    try{ if(!graph) el.volume=0 }catch(e){}
+    EHLOG('attempt(gesture='+!!fromGesture+') readyState='+el.readyState+
+          ' buffered='+(el.buffered.length?el.buffered.end(0).toFixed(0)+'s':'0')+
+          ' activation='+(navigator.userActivation?navigator.userActivation.isActive:'?'));
 
-    var pr = el.play();                       /* SYNCHRONOUS inside the gesture */
+    var pr = el.play();                       /* BARE, FIRST, inside the gesture */
+
+    if(fromGesture && !triedGraph){
+      triedGraph=true; graph=makeGraph();
+      EHLOG('graph '+(graph?('built, ctx='+graph.ctx.state):'unavailable'));
+      if(graph){ try{ el.volume=1 }catch(e){} }
+    } else if(graph && graph.ctx.state==='suspended'){ try{graph.ctx.resume()}catch(e){} }
+
     (pr&&pr.then?pr:Promise.resolve()).then(function(){
+      EHLOG('play() RESOLVED','good');
       if(!wanted){ el.pause(); return; }      /* muted while play() was in flight */
       playing=true; startedAt=Date.now();
       detach(); paint();
@@ -712,7 +782,10 @@ setTimeout(sweep,1200);
          than tearing anything down. A backgrounded tab suspends it too, which is
          normal and not a failure. */
       setTimeout(revive,600);
-    }).catch(function(){ /* refused: keep listening, never give up */ });
+    }).catch(function(err){
+      EHLOG('play() REJECTED '+(err&&err.name)+': '+(err&&err.message||''),'bad');
+      /* refused: keep listening, never give up */
+    });
   }
 
   function silence(){
@@ -728,7 +801,9 @@ setTimeout(sweep,1200);
   function wake(e){
     if(e && e===lastEvt) return;              /* bound twice, so it arrives twice */
     lastEvt=e;
-    if(e && e.target && (e.target===btn || btn.contains(e.target))) return;  /* the button has its own handler */
+    EHLOG('wake '+(e&&e.type)+' trusted='+(e&&e.isTrusted)+
+          ' target=<'+((e&&e.target&&e.target.tagName)||'?').toLowerCase()+'>');
+    if(e && e.target && (e.target===btn || btn.contains(e.target))) { EHLOG('  ignored: button has its own handler'); return; }
     if(wanted) attempt(true);
   }
   function detach(){
@@ -767,12 +842,19 @@ setTimeout(sweep,1200);
 
   paint();
   if(wanted) attach();
+  EHLOG('init wanted='+wanted+' canPlay='+el.canPlayType('audio/mp4')+' preload='+el.preload);
+  /* Watch scroll separately: it will not grant permission, but knowing whether it
+     fires at all while touch events do not is the thing worth seeing. */
+  ['scroll','touchmove','wheel'].forEach(function(ev){
+    var n=0;
+    window.addEventListener(ev,function(){ if(++n<3||n%25===0) EHLOG('(saw '+ev+' #'+n+')'); },{passive:true});
+  });
 
   /* Buffer once the page's own work is done, so the gesture is not waiting on
      1.4MB to arrive. Deferred to load so it never competes with the hero. */
   window.addEventListener('load',function(){
     if(!wanted||playing) return;
-    try{ el.preload='auto'; el.load(); }catch(e){}
+    try{ el.preload='auto'; el.load(); EHLOG('buffering started'); }catch(e){}
   });
 })();
 </script>

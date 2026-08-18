@@ -8,6 +8,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script>
+/* Only hide content for the reveal animation if this browser can actually reveal it again. */
+if('IntersectionObserver' in window && !matchMedia('(prefers-reduced-motion: reduce)').matches){
+  document.documentElement.className='reveal-on';
+}
+</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -237,7 +243,7 @@ footer{padding:76px 0 40px;border-top:1px solid var(--line)}
 @media (max-width:720px){.demo-tag{left:12px;bottom:12px;font-size:9.5px;padding:7px 11px}}
 
 /* ---------- reveal ---------- */
-.rv{opacity:0;transform:translateY(26px);transition:opacity 1s cubic-bezier(.2,.7,.3,1),transform 1s cubic-bezier(.2,.7,.3,1)}
+.reveal-on .rv{opacity:0;transform:translateY(26px);transition:opacity 1s cubic-bezier(.2,.7,.3,1),transform 1s cubic-bezier(.2,.7,.3,1)}
 .rv.in{opacity:1;transform:none}
 
 @media (max-width:1024px){
@@ -553,6 +559,26 @@ var io=new IntersectionObserver(function(entries){
   });
 },{threshold:.18,rootMargin:'0px 0px -8% 0px'});
 document.querySelectorAll('.rv').forEach(function(el){io.observe(el)});
+
+// Backstop: IntersectionObserver callbacks are throttled in background tabs and can be
+// missed on a fast programmatic jump. Anything already in view gets revealed regardless.
+function sweep(){
+  document.querySelectorAll('.rv:not(.in)').forEach(function(el){
+    var r=el.getBoundingClientRect();
+    if(r.top<innerHeight*0.92 && r.bottom>0){
+      el.classList.add('in');
+      el.querySelectorAll('.bar span[data-pct]').forEach(function(b){b.style.width=b.dataset.pct+'%'});
+      el.querySelectorAll('.num[data-count]').forEach(function(n){n.textContent=n.dataset.count+(n.dataset.suffix||'')});
+    }
+  });
+}
+var sweeping=false;
+function queueSweep(){if(sweeping)return;sweeping=true;requestAnimationFrame(function(){sweeping=false;sweep()})}
+addEventListener('scroll',queueSweep,{passive:true});
+addEventListener('resize',queueSweep);
+addEventListener('load',queueSweep);
+document.addEventListener('visibilitychange',function(){if(!document.hidden)queueSweep()});
+queueSweep();
 </script>
 <a class="demo-tag" href="#work">Concept demo · sample content &amp; placeholder photos</a>
 </body>

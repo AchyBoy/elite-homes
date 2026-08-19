@@ -87,6 +87,15 @@ p{color:var(--paper-dim);font-size:16.5px}
 header{position:fixed;top:0;left:0;right:0;z-index:100;transition:background .4s ease,border-color .4s ease,padding .4s ease;
   border-bottom:1px solid transparent;padding:26px 0}
 header.solid{background:rgba(13,14,16,.88);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom-color:var(--line);padding:16px 0}
+/* Attribution strip. Shows at the top, then tucks away as the page scrolls so it
+   never competes with the site itself. */
+.madefor{text-align:center;font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--muted);padding-bottom:15px;margin-bottom:17px;border-bottom:1px solid var(--line);
+  max-height:40px;overflow:hidden;
+  transition:opacity .4s ease,max-height .4s ease,padding .4s ease,margin .4s ease,border-color .4s ease}
+.madefor b{color:var(--brass-lt);font-weight:500;letter-spacing:.2em}
+header.solid .madefor{opacity:0;max-height:0;padding-bottom:0;margin-bottom:0;border-color:transparent}
+@media (max-width:720px){.madefor{font-size:9px;letter-spacing:.14em;padding-bottom:11px;margin-bottom:13px}}
 .nav{display:flex;align-items:center;justify-content:space-between;gap:24px}
 .brand{font-family:'Cormorant Garamond',Georgia,serif;font-size:23px;letter-spacing:.30em;text-transform:uppercase;font-weight:400;white-space:nowrap}
 .brand span{color:var(--brass)}
@@ -317,6 +326,9 @@ footer{padding:76px 0 40px;border-top:1px solid var(--line)}
 <body>
 
 <header id="hdr">
+  <div class="wrap">
+    <div class="madefor">Made for <b>Braden</b> &nbsp;·&nbsp; by <b>Andrew Young</b>, Foch Electric</div>
+  </div>
   <div class="wrap nav">
     <a href="#" class="brand">Elite<span>.</span>Homes</a>
     <nav class="nav-links" id="navlinks">
@@ -678,7 +690,7 @@ window.EHLOG=function(){};
       String(msg).replace(/&/g,'&amp;').replace(/</g,'&lt;');
     b.appendChild(d); b.scrollTop=b.scrollHeight;
   };
-  EHLOG('BUILD 20260818-164825   <- if this is not the build you were told to test, you are on a CACHED page');
+  EHLOG('BUILD 20260818-205840   <- if this is not the build you were told to test, you are on a CACHED page');
   EHLOG('UA '+navigator.userAgent);
   EHLOG('activation API: '+(navigator.userActivation?'yes':'no'));
 })();

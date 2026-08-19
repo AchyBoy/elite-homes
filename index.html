@@ -732,14 +732,34 @@ window.EHLOG=function(){};
   try{ wanted = localStorage.getItem('eh-music')!=='off' }catch(e){}
 
   function setVol(v){ try{ el.volume=Math.max(0,Math.min(1,v)) }catch(e){} }
+  /* The deadline is not a nicety. iOS ignores element.volume completely, so el.volume
+     never moves, the convergence test is never satisfied, and without a deadline this
+     interval spins for ever and done() is never called. That is how "Sound off" left the
+     music playing on a real iPhone: the only pause() lived in the done callback of this
+     fade. done() must ALWAYS run. Found on the Foch site, same code, same bug. */
   function fadeTo(target,done){
     clearInterval(fadeTimer);
+    var deadline=Date.now()+1200, fired=false;
+    function finish(){ if(fired) return; fired=true; clearInterval(fadeTimer); if(done) done(); }
     fadeTimer=setInterval(function(){
       var v=el.volume, step=0.04;
-      if(Math.abs(v-target)<=step){ setVol(target); clearInterval(fadeTimer); if(done) done(); }
-      else setVol(v<target ? v+step : v-step);
+      if(Math.abs(v-target)<=step){ setVol(target); finish(); return; }
+      if(Date.now()>deadline){ finish(); return; }   /* volume is not settable here */
+      setVol(v<target ? v+step : v-step);
     },40);
   }
+
+  /* Is element.volume actually honoured? Desktop yes, iOS no. Asked once, because the
+     answer decides whether a fade is even possible. */
+  var volumeWorks=(function(){
+    try{
+      var before=el.volume, probe=(before>0.5?0.25:0.75);
+      el.volume=probe;
+      var moved=Math.abs(el.volume-probe)<0.01;
+      el.volume=before;
+      return moved;
+    }catch(e){ return false }
+  })();
 
   function paint(){
     var inviting = wanted && !playing;
@@ -864,6 +884,9 @@ window.EHLOG=function(){};
 
   function silence(){
     playing=false; paint();
+    /* Where volume is ignored there is nothing to fade, and pretending otherwise is
+       what left the track running. Stop it outright and stop it now. */
+    if(!volumeWorks){ clearInterval(fadeTimer); el.pause(); return; }
     fadeTo(0,function(){ el.pause() });
   }
 
